@@ -1,0 +1,23 @@
+Device	Interface	Vlan tag	Forbindelse	IP	NetID	Subnetmasker
+R1						
+	G0/1		AP	203.0.113.1	203.0.113.0/29	25.255.255.248
+	G0/2		R2	10.0.0.1	10.0.0.0/30	255.255.255.252
+R2						
+	G0/1		R1	10.0.0.2	10.0.0.0/30	255.255.255.252
+	G0/2.20	20	Switch(admin)	192.168.20.1	192.168.20.0/29	255.255.255.248
+	G0/2.30	30	Switch(Server)	192.168.30.1	192.168.30.0/29	255.255.255.248
+	G0/2.40	40	Switch(user	192.168.40.1	192.168.40.0/27	255.255.255.224
+SWITCH						
+	G0/1	TRUNK				
+DHCP SCOPE						
+	vlan 20			192.168.20.3-192.168.20.6		
+	vlan40			192.168.40.2-192.168.40.30		
+						
+Devices						
+	Device		Wi-FI	203.0.113.2	255.255.255.248	
+	Server		Skal indsættes	192.168.30.2	255.255.255.248	
+	End user #1		skal indsættes	192.168.20.2	255.255.255.248	
+	End user #2		skal indsættes	192.168.40.3	255.255.255.224	
+	End user #3		skal indsættes	192.168.40.4	255.255.255.224	
+	End user #n		skal indsættes	192.168.40.n	255.255.255.224	
+						
