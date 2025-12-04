@@ -1,0 +1,13 @@
+Status: active
+Logging: on (low)
+Default: deny (incoming), allow (outgoing), disabled (routed)
+New profiles: skip
+
+To                         Action      From
+--                         ------      ----
+6271                       ALLOW IN    Anywhere                  
+5432                       ALLOW IN    Anywhere                  
+443                        ALLOW IN    Anywhere                  
+6271 (v6)                  ALLOW IN    Anywhere (v6)             
+5432 (v6)                  ALLOW IN    Anywhere (v6)             
+443 (v6)                   ALLOW IN    Anywhere (v6)
