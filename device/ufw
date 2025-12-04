@@ -1,0 +1,13 @@
+Status: active
+Logging: on (low)
+Default: deny (incoming), allow (outgoing), disabled (routed)
+New profiles: skip
+
+To                         Action      From
+--                         ------      ----
+8021                       ALLOW IN    Anywhere                  
+1514                       ALLOW IN    Anywhere                  
+1515                       ALLOW IN    Anywhere                  
+8021 (v6)                  ALLOW IN    Anywhere (v6)             
+1514 (v6)                  ALLOW IN    Anywhere (v6)             
+1515 (v6)                  ALLOW IN    Anywhere (v6)
