@@ -1,0 +1,14 @@
+# Following lines are altered and taken from /etc/ssh/sshd_config-file on the server
+
+# Line 23
+Port 6271
+
+# Line 41
+PermitRootLogin prohibit-password
+
+# Line 47
+PubkeyAuthentication yes
+
+# Line 66
+PasswordAuthentication no
+#PermitEmptyPasswords no
