@@ -1,0 +1,10 @@
+# Following lines are altered and taken from /etc/ssh/sshd_config-file on the device
+
+# Line 14
+Port 8021
+
+# Line 38
+PubkeyAuthentication yes
+
+# Line 57
+PasswordAuthentication no
