@@ -1,3 +1,4 @@
+```text
 Device	Interface	Vlan tag	Forbindelse	      IP	           				NetID	           Subnetmasker
 R1						
 	    G0/1		            AP	              203.0.113.1	   				203.0.113.0/29	    225.255.255.248
@@ -22,4 +23,4 @@ Devices
 	Guest 	#2		            skal indsættes	192.168.40.3/27	                        			255.255.255.224	
 	Guest 	#3		            skal indsættes	192.168.40.4/27	                        			255.255.255.224	
 	Guest 	#n		            skal indsættes	192.168.40.n+1/27                        			255.255.255.224	
-						
+	```
