@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+
+{% block title %}EEG Electrode Test – Dashboard{% endblock %}
+
+{% block content %}
+
+<div class="row">
+    <div class="col-12 col-lg-8">
+        <div class="card mb-4">
+            <div class="card-header">
+                Electrode test – dummy data fra database
+            </div>
+            <div class="card-body">
+                <div id="sensor-plot" style="height:400px;"></div>
+
+                <p class="text-muted mt-2" id="sensor-info">
+                    Henter data fra API...
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-12 col-lg-4">
+        <div class="card mb-4">
+            <div class="card-header">
+                Status
+            </div>
+            <div class="card-body">
+                <ul class="list-unstyled mb-0">
+
+                    <li>API: <span class="badge bg-secondary" id="api-status">Ukendt</span></li>
+
+                    <li>Database: <span class="badge bg-success">Tilsluttet (Electrode_Test)</span></li>
+
+                    <li>Seneste test: <span class="badge bg-secondary" id="last-timestamp">N/A</span></li>
+
+                    <li>Seneste antal elektroder: <span class="badge bg-secondary" id="last-elec">N/A</span></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+
+{{ super() }}
+
+<script>
+    async function loadSensorData() {
+        const statusEl = document.getElementById("api-status");
+        const infoEl = document.getElementById("sensor-info");
+        const lastTsEl = document.getElementById("last-timestamp");
+        const lastElecEl = document.getElementById("last-elec");
+
+        try {
+            const res = await fetch("/api/sensor-data");
+            if (!res.ok) {
+                throw new Error("API-fejl: " + res.status);
+            }
+
+            const data = await res.json();
+
+            const x = data.timestamps;
+            const v1 = data.testvalue1;
+            const v2 = data.testvalue2;
+            const v3 = data.testvalue3;
+            const elec = data.electrodes_tested;
+
+            const traces = [];
+
+            if (v1 && v1.length > 0) {
+                traces.push({
+                    x: x,
+                    y: v1,
+                    mode: 'lines+markers',
+                    name: 'TestValue1'
+                });
+            }
+            if (v2 && v2.length > 0) {
+                traces.push({
+                    x: x,
+                    y: v2,
+                    mode: 'lines+markers',
+                    name: 'TestValue2'
+                });
+            }
+            if (v3 && v3.length > 0) {
+                traces.push({
+                    x: x,
+                    y: v3,
+                    mode: 'lines+markers',
+                    name: 'TestValue3'
+                });
+            }
+
+            const layout = {
+                title: (data.sensor_name || 'Electrode Test') + ' – dummy data',
+                xaxis: { title: 'Tid' },
+                yaxis: { title: 'Testværdier (' + (data.unit || '') + ')' }
+            };
+
+            Plotly.newPlot('sensor-plot', traces, layout);
+
+            infoEl.textContent = "Viser " + (data.count ?? x.length) + " målepunkter fra databasen.";
+
+            if (x.length > 0) {
+                lastTsEl.textContent = x[x.length - 1];
+                lastTsEl.classList.remove("bg-secondary");
+                lastTsEl.classList.add("bg-info");
+            }
+
+            if (elec && elec.length > 0) {
+                lastElecEl.textContent = elec[elec.length - 1];
+                lastElecEl.classList.remove("bg-secondary");
+                lastElecEl.classList.add("bg-info");
+            }
+
+            statusEl.textContent = "OK";
+            statusEl.classList.remove("bg-secondary");
+            statusEl.classList.add("bg-success");
+
+        } catch (err) {
+            console.error(err);
+            infoEl.textContent = "Kunne ikke hente data fra API'et.";
+            statusEl.textContent = "Fejl";
+            statusEl.classList.remove("bg-success");
+            statusEl.classList.add("bg-danger");
+        }
+    }
+
+    loadSensorData();
+</script>
+{% endblock %}
