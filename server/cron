@@ -1,0 +1,1 @@
+0 7 * * * /home/services/psql_backup.sh
