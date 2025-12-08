@@ -1,1 +1,1 @@
-0 7 * * * /home/services/psql_backup.sh
+* * * * * /usr/bin/bash  /home/services/test.sh
