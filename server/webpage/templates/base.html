@@ -1,37 +1,71 @@
-<!DOCTYPE html>
+<!DOCTYPE html> 
+<!-- Fortæller browseren, at dette er et moderne HTML5-dokument -->
 
 <html lang="da">
+<!-- Start på HTML-dokumentet. lang="da" betyder, at sproget er dansk -->
 
 <head>
+    <!-- Head-sektionen indeholder metadata, titel, CSS-links osv. -->
 
-     <meta charset="UTF-8" />
+    <meta charset="UTF-8" />
+    <!-- Sætter tegnsættet til UTF-8, så æøå osv. virker -->
 
-     <title>{% block title %}IoT Sensor Dashboard{% endblock %}</title>
+    <title>{% block title %}IoT Sensor Dashboard{% endblock %}</title>
+    <!-- <title> er sidens titel i browser-fanen.
+         Jinja2-blok: {#% block title %#} gør det muligt for child-templates 
+         (som index.html) at overskrive titlen.
+         Standardtitel, hvis ingen blok overskriver: "IoT Sensor Dashboard". -->
 
-     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap CSS -->
+    <link
+        href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+        rel="stylesheet"
+    >
+    <!-- Loader Bootstrap CSS fra en CDN.
+         Giver dig nemme klasser til grid, knapper, card osv. -->
 
-     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <!-- Plotly JS -->
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <!-- Loader Plotly JavaScript-biblioteket fra CDN.
+         Bruges til at lave grafer i index.html. -->
 
-     {% block head_extra %}{% endblock %}
+    {% block head_extra %}{% endblock %}
+    <!-- Tom Jinja2-blok som child-templates kan bruge til at tilføje ekstra <head>-indhold
+         (fx ekstra CSS/JS), hvis det bliver nødvendigt. -->
 </head>
 
 <body class="bg-light">
+<!-- Bodyen er alt det, der bliver vist på siden.
+     class="bg-light" giver en lys baggrundsfarve (Bootstrap). -->
 
-     <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
-          <div class="container-fluid">
-               <a class="navbar-brand" href="#">IoT Sensor Dashboard</a>
-          </div>
-     </nav>
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
+  <!-- Bootstrap-navbar (topmenu) med mørk baggrund og lidt margin i bunden (mb-4). -->
+  <div class="container-fluid">
+    <!-- Gør navbaren responsiv og fuld bredde. -->
+    <a class="navbar-brand" href="#">IoT Sensor Dashboard</a>
+    <!-- Teksten/logoet i venstre side af navbaren. 
+         href="#" betyder at linket bare går til toppen af siden. -->
+  </div>
+</nav>
 
-     <div class="container mb-5">
-          {% block content %}{% endblock %}
-     </div>
+<div class="container mb-5">
+    <!-- Bootstrap container: centrerer indhold og giver horizontal padding.
+         mb-5: margin-bottom for luft under indholdet. -->
+    {% block content %}{% endblock %}
+    <!-- Jinja2-blok hvor child-templates (som index.html) putter deres indhold.
+         Hele "siden" (cards, grafer osv.) kommer herind. -->
+</div>
 
-     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js">
-     </script>
+<script
+  src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js">
+</script>
+<!-- Bootstrap JavaScript (bundle inkluderer Popper osv.).
+     Gør fx dropdowns, modals osv. interaktive. -->
 
-     {% block scripts %}{% endblock %}
+{% block scripts %}{% endblock %}
+<!-- Endnu en Jinja2-blok, hvor child-templates kan tilføje JavaScript.
+     I index.html bruges den til at tilføje Plotly/fetch-koden til grafen. -->
 
 </body>
-
 </html>
+<!-- Slut på HTML-dokumentet -->

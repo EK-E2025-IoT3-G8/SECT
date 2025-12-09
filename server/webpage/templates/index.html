@@ -1,82 +1,121 @@
 {% extends "base.html" %}
+<!-- Fortæller Jinja2/Flask, at denne template arver layoutet fra base.html.
+     Det betyder, at <html>, <head>, navbar osv. kommer derfra. -->
 
 {% block title %}EEG Electrode Test – Dashboard{% endblock %}
+<!-- Overskriver title-blokken fra base.html.
+     Browserfanen viser nu denne tekst i stedet for standard-titlen. -->
 
 {% block content %}
+<!-- Starter content-blokken, som blev defineret i base.html.
+     Alt herinde bliver indsat i <div class="container"> i base.html. -->
 
 <div class="row">
+    <!-- Bootstrap row: en række i grid-systemet. -->
     <div class="col-12 col-lg-8">
+        <!-- Kolonne: fuld bredde på små skærme (col-12), 8/12 på store skærme (col-lg-8). -->
         <div class="card mb-4">
+            <!-- Bootstrap card med margin-bottom -->
             <div class="card-header">
                 Electrode test – dummy data fra database
+                <!-- Cardens overskrift/label. -->
             </div>
             <div class="card-body">
+                <!-- Cardens hovedindhold. -->
                 <div id="sensor-plot" style="height:400px;"></div>
+                <!-- Tom <div> som Plotly senere tegner grafen ind i (via id="sensor-plot"). -->
 
                 <p class="text-muted mt-2" id="sensor-info">
                     Henter data fra API...
+                    <!-- Tekst under grafen.
+                         Bliver opdateret med info om antal datapunkter, når API-kaldet er færdigt. -->
                 </p>
             </div>
         </div>
     </div>
 
     <div class="col-12 col-lg-4">
+        <!-- Side-panel: fuld bredde på små skærme, 4/12 på store skærme. -->
         <div class="card mb-4">
             <div class="card-header">
                 Status
+                <!-- Titel på statuspanelet. -->
             </div>
             <div class="card-body">
                 <ul class="list-unstyled mb-0">
+                    <!-- Liste uden bullet points (list-unstyled) og ingen ekstra margin i bunden (mb-0). -->
 
                     <li>API: <span class="badge bg-secondary" id="api-status">Ukendt</span></li>
+                    <!-- Viser status på API'ets tilgængelighed.
+                         <span id="api-status"> bliver opdateret i JavaScript til "OK" eller "Fejl". -->
 
                     <li>Database: <span class="badge bg-success">Tilsluttet (Electrode_Test)</span></li>
+                    <!-- Fast tekst der siger at databasen er tilsluttet (logisk).
+                         Du kunne senere gøre den dynamisk, hvis du vil. -->
 
                     <li>Seneste test: <span class="badge bg-secondary" id="last-timestamp">N/A</span></li>
+                    <!-- Viser timestamp for sidste datapunkt.
+                         JavaScript opdaterer #last-timestamp, når data er hentet. -->
 
                     <li>Seneste antal elektroder: <span class="badge bg-secondary" id="last-elec">N/A</span></li>
+                    <!-- Viser Electrodes_Tested for sidste række.
+                         JavaScript opdaterer #last-elec, når data er hentet. -->
                 </ul>
             </div>
         </div>
     </div>
 </div>
 {% endblock %}
+<!-- Slut på content-blokken. -->
 
 {% block scripts %}
+<!-- Starter scripts-blokken, som blev defineret i base.html.
+     Her putter vi side-specifik JavaScript. -->
 
 {{ super() }}
+<!-- Kalder "super", dvs. inkluderer eventuelle scripts fra base.html-blokken.
+     (God vane; her gør det ikke så meget, men det er korrekt Jinja-stil.) -->
 
 <script>
+    // Definerer en asynkron funktion, som henter data fra API'et og opdaterer graf + status.
     async function loadSensorData() {
+        // Henter DOM-elementerne, vi senere vil opdatere.
         const statusEl = document.getElementById("api-status");
         const infoEl = document.getElementById("sensor-info");
         const lastTsEl = document.getElementById("last-timestamp");
         const lastElecEl = document.getElementById("last-elec");
 
         try {
+            // Kalder dit Flask/APIFlask endpoint /api/sensor-data
             const res = await fetch("/api/sensor-data");
+            // Hvis HTTP-status ikke er 200-299, så kast en fejl.
             if (!res.ok) {
                 throw new Error("API-fejl: " + res.status);
             }
 
+            // Parser JSON-svaret fra API'et til et JavaScript-objekt.
             const data = await res.json();
 
+            // Udpakker arrays fra JSON: tidsstempler og testværdier.
             const x = data.timestamps;
             const v1 = data.testvalue1;
             const v2 = data.testvalue2;
             const v3 = data.testvalue3;
             const elec = data.electrodes_tested;
 
+            // Forbered en liste af Plotly-traces (en trace = en kurve).
             const traces = [];
 
+            // Hvis der er data i v1, så tilføj en trace til grafen.
             if (v1 && v1.length > 0) {
                 traces.push({
-                    x: x,
-                    y: v1,
-                    mode: 'lines+markers',
-                    name: 'TestValue1'
+                    x: x,                    // X-akse = tidsstempler
+                    y: v1,                   // Y-akse = TestValue1
+                    mode: 'lines+markers',   // Linje + punkter
+                    name: 'TestValue1'       // Label i legend
                 });
             }
+            // Tilsvarende for v2
             if (v2 && v2.length > 0) {
                 traces.push({
                     x: x,
@@ -85,6 +124,7 @@
                     name: 'TestValue2'
                 });
             }
+            // Og for v3
             if (v3 && v3.length > 0) {
                 traces.push({
                     x: x,
@@ -94,33 +134,40 @@
                 });
             }
 
+            // Layout til Plotly-grafen: titel, aksetitler osv.
             const layout = {
                 title: (data.sensor_name || 'Electrode Test') + ' – dummy data',
                 xaxis: { title: 'Tid' },
                 yaxis: { title: 'Testværdier (' + (data.unit || '') + ')' }
             };
 
+            // Tegner/renderer grafen inde i <div id="sensor-plot">
             Plotly.newPlot('sensor-plot', traces, layout);
 
+            // Opdaterer tekstlinjen under grafen med antal datapunkter.
             infoEl.textContent = "Viser " + (data.count ?? x.length) + " målepunkter fra databasen.";
 
+            // Opdaterer "seneste test"-badge, hvis der er mindst ét datapunkt.
             if (x.length > 0) {
-                lastTsEl.textContent = x[x.length - 1];
+                lastTsEl.textContent = x[x.length - 1];         // Sidste timestamp
                 lastTsEl.classList.remove("bg-secondary");
                 lastTsEl.classList.add("bg-info");
             }
 
+            // Opdaterer "seneste antal elektroder"-badge, hvis elektrode-arrayet ikke er tomt.
             if (elec && elec.length > 0) {
-                lastElecEl.textContent = elec[elec.length - 1];
+                lastElecEl.textContent = elec[elec.length - 1]; // Sidste Electrodes_Tested
                 lastElecEl.classList.remove("bg-secondary");
                 lastElecEl.classList.add("bg-info");
             }
 
+            // Fortæller i UI, at API-forbindelsen virker.
             statusEl.textContent = "OK";
             statusEl.classList.remove("bg-secondary");
             statusEl.classList.add("bg-success");
 
         } catch (err) {
+            // Hvis noget går galt (fx API nede), skriver vi fejlen i console og opdaterer UI.
             console.error(err);
             infoEl.textContent = "Kunne ikke hente data fra API'et.";
             statusEl.textContent = "Fejl";
@@ -129,6 +176,8 @@
         }
     }
 
+    // Hent data fra API'et, så snart siden er loadet.
     loadSensorData();
 </script>
 {% endblock %}
+<!-- Slut på scripts-blokken. -->

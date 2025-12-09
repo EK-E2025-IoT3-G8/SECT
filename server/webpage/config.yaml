@@ -1,0 +1,22 @@
+flask:
+  SECRET_KEY: "skift_mig_gerne"
+  SENSOR_NAME: "EEG Electrode Test"
+  SENSOR_UNIT: "mV"
+
+
+database:
+  host: "127.0.0.1"
+  # Adressen på din PostgreSQL-server (127.0.0.1 = din egen maskine).
+
+  port: "5432"
+  # Porten PostgreSQL lytter på (standard: 5432).
+
+  user: "postgres"
+  # Brugernavn til databasen. Her din superuser "postgres".
+
+  password: "sander12"
+  # Password til brugeren. Du oprettede/ændrede det tidligere.
+
+  dbname: "hospital"  
+  # Navnet på databasen, som du oprettede i pgAdmin og som dine scripts bruger.
+  # Electrode_Test-tabellen ligger inde i denne database.
