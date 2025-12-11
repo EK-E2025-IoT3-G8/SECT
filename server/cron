@@ -1,1 +1,2 @@
 * * * * * /usr/bin/bash  /home/services/psql_backup.sh
+@reboot /home/services/venv_activate.sh
