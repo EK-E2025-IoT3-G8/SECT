@@ -24,7 +24,7 @@ Devices
 	Static Mgmt (Martini)		Ethernet		192.168.20.2/29	                        			255.255.255.248
 	Mgmt 	#2					Ethernet		192.168.20.3/29										255.255.255.248
 	Mgmt 	#n					Ethernet		192.168.20.n+1/29									255.255.255.248
-	Guest 	#2		            skal indsættes	192.168.40.3/27	                        			255.255.255.224	
-	Guest 	#3		            skal indsættes	192.168.40.4/27	                        			255.255.255.224	
-	Guest 	#n		            skal indsættes	192.168.40.n+1/27                        			255.255.255.224	
+	Guest 	#2		            Wi-Fi			192.168.40.3/27	                        			255.255.255.224	
+	Guest 	#3		            Wi-FI			192.168.40.4/27	                        			255.255.255.224	
+	Guest 	#n		            Wi-Fi			192.168.40.n+1/27                        			255.255.255.224	
 	```
