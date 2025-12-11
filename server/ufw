@@ -8,6 +8,7 @@ To                         Action      From
 443                        ALLOW IN    Anywhere                  
 514                        ALLOW IN    Anywhere
 5000                       ALLOW IN    Anywhere                  
+5001                       ALLOW IN    Anywhere                  
 5432                       ALLOW IN    Anywhere                  
 6271                       ALLOW IN    Anywhere                  
 9200                       ALLOW IN    Anywhere                  
@@ -16,6 +17,7 @@ To                         Action      From
 443 (v6)                   ALLOW IN    Anywhere (v6)             
 514 (v6)                   ALLOW IN    Anywhere (v6)             
 5000 (v6)                  ALLOW IN    Anywhere (v6)             
+5001 (v6)                  ALLOW IN    Anywhere (v6)             
 5432 (v6)                  ALLOW IN    Anywhere (v6)             
 6271 (v6)                  ALLOW IN    Anywhere (v6)             
 9200 (v6)                  ALLOW IN    Anywhere (v6)             
