@@ -5,9 +5,11 @@ New profiles: skip
 
 To                         Action      From
 --                         ------      ----
-8021                       ALLOW IN    Anywhere                  
 1514                       ALLOW IN    Anywhere                  
-1515                       ALLOW IN    Anywhere                  
-8021 (v6)                  ALLOW IN    Anywhere (v6)             
+1515                       ALLOW IN    Anywhere  
+5001                       ALLOW IN    Anywhere                  
+8021                       ALLOW IN    Anywhere                  
 1514 (v6)                  ALLOW IN    Anywhere (v6)             
 1515 (v6)                  ALLOW IN    Anywhere (v6)
+5001 (v6)                  ALLOW IN    Anywhere (v6)             
+8021 (v6)                  ALLOW IN    Anywhere (v6)             
