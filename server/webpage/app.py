@@ -2,14 +2,18 @@ import secrets
 # Bruges til at generere en tilfældig SECRET_KEY, hvis den ikke er sat i config.yaml.
 
 from datetime import datetime
-# Bruges til at undersøge/formatere datetime-objekter fra databasen.
+# Bruges til at lave timestamp, når vi gemmer en ny test.
 
 import yaml
 # Bruges til at indlæse config.yaml-filen.
 
-import psycopg2
-from psycopg2 import Error
-# Bruges til at forbinde til PostgreSQL og håndtere DB-fejl.
+import psycopg
+from psycopg import Error
+# psycopg3: hovedmodulet hedder psycopg (ikke psycopg2).
+# Error er base-klassen for database-fejl.
+
+import requests
+# Bruges til at lave HTTP-kald til Raspberry Pi (remote procedure call).
 
 from flask import render_template
 # Fra Flask: render_template bruges til at sende HTML-templates (index.html) til browseren.
@@ -24,87 +28,97 @@ from apiflask.fields import List, String, Float, Integer
 # Indlæs konfiguration fra YAML
 # --------------------------------------------------
 def load_config(path: str = "config.yaml") -> dict:
-    # Funktion som åbner YAML-filen og returnerer den som et Python-dict.
+    """Åbn config.yaml og returnér indholdet som et dict."""
     with open(path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
 config = load_config()
-# Læser config.yaml ind én gang, når app.py starter.
 
 FLASK_CFG = config.get("flask", {})
-# Henter "flask"-sektionen som et dictionary.
 DB_CFG = config.get("database", {})
-# Henter "database"-sektionen.
+RASPI_CFG = config.get("raspberry", {})
 
 SENSOR_NAME = FLASK_CFG.get("SENSOR_NAME", "EEG Electrode Test")
-# Hvis SENSOR_NAME er sat i YAML, brug den. Ellers brug "EEG Electrode Test".
-SENSOR_UNIT = FLASK_CFG.get("SENSOR_UNIT", "mV")
-# Tilsvarende for SENSOR_UNIT.
+# Bruges som titel/label i frontend.
+
+SENSOR_UNIT = FLASK_CFG.get("SENSOR_UNIT", "Ohm")
+# Enhed til grafen. Sæt evt. til "kΩ" i config.yaml, hvis I viser kilo-ohm.
 
 
 # --------------------------------------------------
 # Opret APIFlask-app
 # --------------------------------------------------
 app = APIFlask(__name__)
-# Opretter APIFlask-applikationen. __name__ fortæller hvor app'en bor (modulnavn).
-
 app.config["SECRET_KEY"] = FLASK_CFG.get("SECRET_KEY", secrets.token_bytes(32))
-# Sætter SECRET_KEY fra config.yaml, eller genererer en tilfældig,
-# hvis den ikke er sat. SECRET_KEY bruges af Flask til sessions, CSRF etc.
 
 
 # --------------------------------------------------
-# DB helper
+# DB helper (psycopg3)
 # --------------------------------------------------
 def get_db_connection():
-    # Funktion som opretter og returnerer en ny databaseforbindelse.
-    connection = psycopg2.connect(
+    """Opret og returnér en ny psycopg3-forbindelse til PostgreSQL."""
+    connection = psycopg.connect(
         user=DB_CFG.get("user", "postgres"),
-        # Læser brugernavn fra config.yaml -> database.user (eller "postgres" som fallback).
-
         password=DB_CFG.get("password", "sander12"),
-        # Læser password fra config.yaml -> database.password (eller "sander12" som fallback).
-
         host=DB_CFG.get("host", "127.0.0.1"),
-        # Host, normalt 127.0.0.1.
-
         port=DB_CFG.get("port", "5432"),
-        # Port, normalt 5432.
-
-        database=DB_CFG.get("dbname", "hospital"),
-        # Databasenavn; skal matche det du oprettede, fx "hospital".
+        dbname=DB_CFG.get("dbname", "hospital"),
     )
     connection.autocommit = True
-    # Slår autocommit til: hver query bliver committed automatisk.
     return connection
-    # Returnerer connection-objektet til den, der kaldte funktionen.
 
 
 # --------------------------------------------------
-# APIFlask schema for output
+# APIFlask schemas for output
 # --------------------------------------------------
 class SensorDataOut(Schema):
-    # Definerer strukturen for det JSON-objekt, som /api/sensor-data returnerer.
+    """
+    Data til Plotly-grafen (historiske tests fra databasen).
+
+    Struktur:
+      - timestamps: liste af str (ISO-tider)
+      - channels:   liste af int, fx [0,1,2,3] (samme for alle rækker)
+      - ch0/ch1/ch2/ch3: hver en liste af floats (modstand for hver kanal
+        over tid – én værdi pr. test)
+      - bus_voltage: liste af floats (samme længde som timestamps)
+      - current:     liste af floats
+      - sensor_name, unit: meta-info til grafens labels
+      - count: antal tests (rækker)
+    """
     timestamps = List(String)
-    # En liste af strings – tidsstempler for hver test.
-
-    electrodes_tested = List(Integer)
-    # En liste af integers – Electrodes_Tested-kolonnen.
-
-    testvalue1 = List(Float)
-    testvalue2 = List(Float)
-    testvalue3 = List(Float)
-    # Tre lister med floats – TestValue1/2/3.
-
+    channels = List(Integer)
+    ch0 = List(Float)
+    ch1 = List(Float)
+    ch2 = List(Float)
+    ch3 = List(Float)
+    bus_voltage = List(Float)
+    current = List(Float)
     sensor_name = String()
-    # Navn på sensoren/testen.
-
     unit = String()
-    # Enhed ("mV" fx).
-
     count = Integer()
-    # Antal datapunkter.
+
+
+class RemoteStartOut(Schema):
+    """
+    Svar fra Raspberry Pi RPC-kaldet (én ny test).
+
+    Dette schema matcher JSON fra test.py på Pi'en:
+      message, channels, voltages, resistances, statuses,
+      electrode_count, bus_voltage, current
+
+    Vi tilføjer også timestamp for den gemte række.
+    """
+    message = String()
+    timestamp = String()
+    channels = List(Integer)
+    voltages = List(Float)
+    resistances = List(Float)
+    statuses = List(String)
+    electrode_count = Integer()
+    bus_voltage = Float()
+    current = Float()
+    unit = String()
 
 
 # --------------------------------------------------
@@ -112,109 +126,125 @@ class SensorDataOut(Schema):
 # --------------------------------------------------
 @app.get("/")
 def index():
-    # Route til forsiden (GET /).
-    # Når du går til http://127.0.0.1:5000/ rammer du denne funktion.
+    """Forsiden med graf + knap til at starte test på Pi'en."""
     return render_template("index.html")
-    # Flask rendere index.html (som extender base.html) og sender HTML ud i browseren.
 
 
 # --------------------------------------------------
-# API-endpoint: læs data fra Electrode_Test
+# API: læs historiske tests fra Electrode_Measurements (til Plotly)
 # --------------------------------------------------
 @app.get("/api/sensor-data")
 @app.output(SensorDataOut)
 def get_sensor_data():
     """
-    Henter data fra Electrode_Test-tabellen og sender dem til frontend.
-    """
-    # Ovenstående docstring er kun info/kommentar og vises også i API-dokumentation.
+    Henter data fra Electrode_Measurements-tabellen og sender dem til frontend.
 
-    # Laver tomme Python-lister, som vi fylder med data fra databasen.
-    timestamps = []
-    electrodes = []
-    v1_list = []
-    v2_list = []
-    v3_list = []
+    Mapping:
+      test_timestamp   -> timestamps
+      ch0_resistance   -> ch0
+      ch1_resistance   -> ch1
+      ch2_resistance   -> ch2
+      ch3_resistance   -> ch3
+      bus_voltage      -> bus_voltage
+      current          -> current
+    """
+
+    timestamps: list[str] = []
+    ch0_list: list[float] = []
+    ch1_list: list[float] = []
+    ch2_list: list[float] = []
+    ch3_list: list[float] = []
+    bus_list: list[float] = []
+    curr_list: list[float] = []
 
     connection = None
     cursor = None
-    # Initialiserer connection og cursor.
 
     try:
         connection = get_db_connection()
-        # Opretter DB-forbindelse via helper-funktionen.
-
         cursor = connection.cursor()
-        # Opretter cursor til at udføre SQL med.
 
         select_query = """
-            SELECT Test_DateTime, Electrodes_Tested, TestValue1, TestValue2, TestValue3
-            FROM Electrode_Test
-            ORDER BY Test_DateTime ASC;
+            SELECT test_timestamp,
+                   ch0_resistance,
+                   ch1_resistance,
+                   ch2_resistance,
+                   ch3_resistance,
+                   bus_voltage,
+                   current
+            FROM Electrode_Measurements
+            ORDER BY test_timestamp ASC;
         """
-        # SQL der henter alle rækker fra Electrode_Test-tabellen,
-        # sorteret efter tid (ældste -> nyeste).
 
         cursor.execute(select_query)
-        # Eksekverer SELECT-queryen.
-
         rows = cursor.fetchall()
-        # Henter alle rækker som en liste af tuples.
-        # Hver row ser fx ud som (datetime, 64, 0.85, 0.90, 0.88).
 
         for row in rows:
-            dt = row[0]         # Test_DateTime (datetime-objekt)
-            elec = row[1]       # Electrodes_Tested (int)
-            tv1 = row[2]        # TestValue1 (decimal/float)
-            tv2 = row[3]        # TestValue2
-            tv3 = row[4]        # TestValue3
+            dt = row[0]   # test_timestamp
+            r0 = row[1]   # ch0_resistance
+            r1 = row[2]   # ch1_resistance
+            r2 = row[3]   # ch2_resistance
+            r3 = row[4]   # ch3_resistance
+            bv = row[5]   # bus_voltage
+            cur = row[6]  # current
 
-            # Konverterer datetime til ISO-string (fx "2025-01-01T10:00:00").
+            # Timestamp -> ISO string
             if isinstance(dt, datetime):
                 timestamps.append(dt.isoformat())
             else:
                 timestamps.append(str(dt))
 
-            # Tilføjer værdier til listerne (konverterer til standard Python-typer).
-            electrodes.append(int(elec) if elec is not None else None)
-            v1_list.append(float(tv1) if tv1 is not None else None)
-            v2_list.append(float(tv2) if tv2 is not None else None)
-            v3_list.append(float(tv3) if tv3 is not None else None)
+            # Modstande: sørg for, at vi aldrig sender None til Plotly
+            ch0_list.append(float(r0) if r0 is not None else 0.0)
+            ch1_list.append(float(r1) if r1 is not None else 0.0)
+            ch2_list.append(float(r2) if r2 is not None else 0.0)
+            ch3_list.append(float(r3) if r3 is not None else 0.0)
+
+            # Bus voltage + current
+            bus_list.append(float(bv) if bv is not None else 0.0)
+            curr_list.append(float(cur) if cur is not None else 0.0)
 
     except (Exception, Error) as error:
-        # Hvis der sker en fejl (forbindelse, SQL osv.)
-        print("Error while fetching electrode data:", error)
-        # Printer fejlen i terminalen.
+        print("Error while fetching electrode measurement data:", error)
 
-        # Returnerer en tom struktur, så /api/sensor-data stadig sender gyldig JSON.
+        # Hvis der sker fejl, returnér gyldig JSON med tomme lister,
+        # så frontend/Plotly ikke crasher.
         return {
             "timestamps": [],
-            "electrodes_tested": [],
-            "testvalue1": [],
-            "testvalue2": [],
-            "testvalue3": [],
+            "channels": [],
+            "ch0": [],
+            "ch1": [],
+            "ch2": [],
+            "ch3": [],
+            "bus_voltage": [],
+            "current": [],
             "sensor_name": SENSOR_NAME,
             "unit": SENSOR_UNIT,
             "count": 0,
         }
 
     finally:
-        # finally kører uanset om der var fejl eller ej.
         if cursor:
             cursor.close()
-            # Lukker cursoren.
         if connection:
             connection.close()
-            # Lukker databaseforbindelsen.
 
-    # Hvis alt lykkedes, returnerer vi data i en dict.
-    # APIFlask bruger schemaet SensorDataOut til at validere/serialisere det her til JSON.
+    # Hvis der ingen rækker er, giver channels ingen mening -> tom liste
+    if len(timestamps) == 0:
+        channels = []
+    else:
+        # Vi har altid 4 kanaler i vores setup: 0,1,2,3
+        channels = [0, 1, 2, 3]
+
     return {
         "timestamps": timestamps,
-        "electrodes_tested": electrodes,
-        "testvalue1": v1_list,
-        "testvalue2": v2_list,
-        "testvalue3": v3_list,
+        "channels": channels,
+        "ch0": ch0_list,
+        "ch1": ch1_list,
+        "ch2": ch2_list,
+        "ch3": ch3_list,
+        "bus_voltage": bus_list,
+        "current": curr_list,
         "sensor_name": SENSOR_NAME,
         "unit": SENSOR_UNIT,
         "count": len(timestamps),
@@ -222,8 +252,124 @@ def get_sensor_data():
 
 
 # --------------------------------------------------
+# API: Remote Procedure Call til Raspberry Pi
+# --------------------------------------------------
+@app.post("/api/start-remote-test")
+@app.output(RemoteStartOut)
+def start_remote_test():
+    """
+    RPC-endpoint:
+      - Bliver kaldt fra hjemmesiden (knappen i index.html).
+      - Sender POST-kald til Raspberry Pi's /start-test.
+      - Gemmer resultatet i Electrode_Measurements.
+      - Returnerer Pi'ens data + timestamp til frontend.
+    """
+    pi_host = RASPI_CFG.get("host", "127.0.0.1")
+    pi_port = RASPI_CFG.get("port", 5001)
+
+    url = f"http://{pi_host}:{pi_port}/start-test"
+
+    try:
+        res = requests.post(url, timeout=10)
+        res.raise_for_status()
+        data = res.json()
+
+        # Forventet JSON fra test.py:
+        # {
+        #   "message": "Test completed on Raspberry Pi",
+        #   "channels": [...],         # fx [0,1,2,3]
+        #   "voltages": [...],
+        #   "resistances": [...],      # 4 værdier, én pr. kanal
+        #   "statuses": [...],
+        #   "electrode_count": 4,
+        #   "bus_voltage": ...,
+        #   "current": ...
+        # }
+
+        channels = data.get("channels", [])
+        resistances = data.get("resistances", [])
+        bus_voltage = data.get("bus_voltage", 0.0)
+        current = data.get("current", 0.0)
+        electrode_count = data.get("electrode_count", len(channels))
+
+        # Sikr at vi har mindst 4 værdier. Hvis ikke, padder vi med 0.
+        r0 = float(resistances[0]) if len(resistances) > 0 else 0.0
+        r1 = float(resistances[1]) if len(resistances) > 1 else 0.0
+        r2 = float(resistances[2]) if len(resistances) > 2 else 0.0
+        r3 = float(resistances[3]) if len(resistances) > 3 else 0.0
+
+        # Opret timestamp for denne test
+        now = datetime.now()
+
+        # Gem i databasen
+        connection = None
+        cursor = None
+        try:
+            connection = get_db_connection()
+            cursor = connection.cursor()
+
+            insert_query = """
+                INSERT INTO Electrode_Measurements
+                    (test_timestamp,
+                     ch0_resistance,
+                     ch1_resistance,
+                     ch2_resistance,
+                     ch3_resistance,
+                     bus_voltage,
+                     current,
+                     electrode_count)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s);
+            """
+
+            cursor.execute(
+                insert_query,
+                (now, r0, r1, r2, r3, float(bus_voltage), float(current), electrode_count),
+            )
+
+        except (Exception, Error) as db_error:
+            print("Error while inserting electrode measurement:", db_error)
+            # Vi lader stadig RPC-svaret gå tilbage, selvom DB insert fejlede.
+
+        finally:
+            if cursor:
+                cursor.close()
+            if connection:
+                connection.close()
+
+        # Returnér data videre til frontend
+        return {
+            "message": data.get("message", "Test completed"),
+            "timestamp": now.isoformat(),
+            "channels": channels,
+            "voltages": data.get("voltages", []),
+            "resistances": resistances,
+            "statuses": data.get("statuses", []),
+            "electrode_count": electrode_count,
+            "bus_voltage": float(bus_voltage),
+            "current": float(current),
+            "unit": SENSOR_UNIT,
+        }
+
+    except Exception as e:
+        print("Error while calling Raspberry Pi:", e)
+        # Fejl skal stadig give gyldig JSON (så frontend ikke dør).
+        now = datetime.now()
+        return {
+            "message": "Kunne ikke kontakte Raspberry Pi",
+            "timestamp": now.isoformat(),
+            "channels": [],
+            "voltages": [],
+            "resistances": [],
+            "statuses": [],
+            "electrode_count": 0,
+            "bus_voltage": 0.0,
+            "current": 0.0,
+            "unit": SENSOR_UNIT,
+        }
+
+
+# --------------------------------------------------
 # Start app'en
 # --------------------------------------------------
 if __name__ == "__main__":
     app.run(debug=True)
-
