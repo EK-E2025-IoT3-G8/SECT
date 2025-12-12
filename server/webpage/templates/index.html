@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 <!-- Denne template arver layoutet fra base.html -->
 
-{% block title %}EEG Electrode Test – Dashboard{% endblock %}
+{% block title %}EEG Impedans Test – Dashboard{% endblock %}
 
 {% block content %}
 <div class="row">
@@ -9,7 +9,7 @@
     <div class="col-12 col-lg-8">
         <div class="card mb-4">
             <div class="card-header">
-                Historiske målinger – 4 elektroder
+                Historiske impedansmålinger – 4 elektroder
             </div>
             <div class="card-body">
                 <div id="sensor-plot" style="height:400px;"></div>
@@ -34,7 +34,7 @@
                     <li>Seneste test-tid: <span class="badge bg-secondary" id="last-timestamp">N/A</span></li>
                 </ul>
 
-                <h6>Seneste modstand pr. kanal</h6>
+                <h6>Seneste impedans pr. kanal</h6>
                 <ul class="list-unstyled small">
                     <li>Kanal 0: <span id="last-ch0">N/A</span></li>
                     <li>Kanal 1: <span id="last-ch1">N/A</span></li>
@@ -129,9 +129,9 @@
             }
 
             const layout = {
-                title: (data.sensor_name || "EEG Electrode Test") + " – modstand pr. kanal",
+                title: (data.sensor_name || "EEG Impedans Test") + " – impedans pr. kanal",
                 xaxis: { title: "Tid" },
-                yaxis: { title: "Modstand (" + (data.unit || "Ohm") + ")" }
+                yaxis: { title: "Impedans (" + (data.unit || "Ohm") + ")" }
             };
 
             if (traces.length > 0) {
@@ -151,7 +151,7 @@
                 lastTsEl.classList.remove("bg-secondary");
                 lastTsEl.classList.add("bg-info");
 
-                // Seneste modstand pr. kanal
+                // Seneste impedans pr. kanal
                 lastCh0El.textContent = ch0[lastIndex].toFixed(1) + " " + (data.unit || "Ohm");
                 lastCh1El.textContent = ch1[lastIndex].toFixed(1) + " " + (data.unit || "Ohm");
                 lastCh2El.textContent = ch2[lastIndex].toFixed(1) + " " + (data.unit || "Ohm");
@@ -227,13 +227,13 @@
             if (data.resistances && data.resistances.length >= 4) {
                 rpcStatus.textContent =
                     "Ny test gemt kl. " + data.timestamp +
-                    " – R0=" + data.resistances[0].toFixed(1) +
-                    ", R1=" + data.resistances[1].toFixed(1) +
-                    ", R2=" + data.resistances[2].toFixed(1) +
-                    ", R3=" + data.resistances[3].toFixed(1) +
+                    " – Z0=" + data.resistances[0].toFixed(1) +
+                    ", Z1=" + data.resistances[1].toFixed(1) +
+                    ", Z2=" + data.resistances[2].toFixed(1) +
+                    ", Z3=" + data.resistances[3].toFixed(1) +
                     " " + (data.unit || "Ohm");
             } else {
-                rpcStatus.textContent = data.message || "Test gennemført (men ingen modstandsdata).";
+                rpcStatus.textContent = data.message || "Test gennemført (men ingen impedansdata).";
             }
 
             // Efter en succesfuld test: hent data igen, så grafen og status opdateres
