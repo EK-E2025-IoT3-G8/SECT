@@ -8,7 +8,7 @@ import yaml
 # Bruges til at indlæse config.yaml-filen.
 
 import psycopg
-from psycopg import Error
+#from psycopg import Error
 # psycopg3: hovedmodulet hedder psycopg (ikke psycopg2).
 # Error er base-klassen for database-fejl.
 
@@ -204,7 +204,7 @@ def get_sensor_data():
             bus_list.append(float(bv) if bv is not None else 0.0)
             curr_list.append(float(cur) if cur is not None else 0.0)
 
-    except (Exception, Error) as error:
+    except (Exception, psycopg.Error) as error:
         print("Error while fetching electrode measurement data:", error)
 
         # Hvis der sker fejl, returnér gyldig JSON med tomme lister,
@@ -326,7 +326,7 @@ def start_remote_test():
                 (now, r0, r1, r2, r3, float(bus_voltage), float(current), electrode_count),
             )
 
-        except (Exception, Error) as db_error:
+        except (Exception, psycopg.Error) as db_error:
             print("Error while inserting electrode measurement:", db_error)
             # Vi lader stadig RPC-svaret gå tilbage, selvom DB insert fejlede.
 
@@ -372,4 +372,4 @@ def start_remote_test():
 # Start app'en
 # --------------------------------------------------
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(debug=True, host="0.0.0.0")

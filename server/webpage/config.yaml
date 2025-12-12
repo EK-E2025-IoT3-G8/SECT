@@ -5,10 +5,10 @@ flask:
   SENSOR_UNIT: "mV"
 
 database:
-  host: "127.0.0.1"
+  host: "201.0.113.2"
   port: "5432"
   user: "postgres"
-  password: "sander12"
+  password: "malibabadatabase"
   dbname: "hospital"  
 
 raspberry:
