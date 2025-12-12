@@ -5,7 +5,7 @@ flask:
   SENSOR_UNIT: "mV"
 
 database:
-  host: "201.0.113.2"
+  host: "203.0.113.2"
   port: "5432"
   user: "postgres"
   password: "malibabadatabase"
