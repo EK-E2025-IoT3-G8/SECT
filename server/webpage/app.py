@@ -1,27 +1,11 @@
 import secrets
-# Bruges til at generere en tilfældig SECRET_KEY, hvis den ikke er sat i config.yaml.
-
 from datetime import datetime
-# Bruges til at lave timestamp, når vi gemmer en ny test.
-
 import yaml
-# Bruges til at indlæse config.yaml-filen.
-
 import psycopg
-# from psycopg import Error
-# psycopg3: hovedmodulet hedder psycopg (ikke psycopg2).
-# Error er base-klassen for database-fejl.
-
 import requests
-# Bruges til at lave HTTP-kald til Raspberry Pi (remote procedure call).
-
 from flask import render_template
-# Fra Flask: render_template bruges til at sende HTML-templates (index.html) til browseren.
-
 from apiflask import APIFlask, Schema
 from apiflask.fields import List, String, Float, Integer
-# Fra APIFlask: APIFlask er selve app-klassen (bygger ovenpå Flask).
-# Schema og fields bruges til at definere, hvordan vores API-output ser ud (JSON-schema).
 
 
 # --------------------------------------------------
@@ -39,12 +23,8 @@ FLASK_CFG = config.get("flask", {})
 DB_CFG = config.get("database", {})
 RASPI_CFG = config.get("raspberry", {})
 
-SENSOR_NAME = FLASK_CFG.get("SENSOR_NAME", "EEG Impedans Test")
-# Bruges som titel/label i frontend.
-
+SENSOR_NAME = FLASK_CFG.get("SENSOR_NAME", "EEG Electrode Test")
 SENSOR_UNIT = FLASK_CFG.get("SENSOR_UNIT", "Ohm")
-# Enhed til grafen. Vi viser impedans i Ohm (kan ændres i config.yaml).
-
 
 # --------------------------------------------------
 # Opret APIFlask-app
@@ -79,8 +59,8 @@ class SensorDataOut(Schema):
     Struktur:
       - timestamps: liste af str (ISO-tider)
       - channels:   liste af int, fx [0,1,2,3] (samme for alle rækker)
-      - ch0/ch1/ch2/ch3: hver en liste af floats (IMPEDANS for hver kanal
-        over tid – én værdi pr. test) i Ohm
+      - ch0/ch1/ch2/ch3: hver en liste af floats (modstand for hver kanal
+        over tid – én værdi pr. test)
       - bus_voltage: liste af floats (samme længde som timestamps)
       - current:     liste af floats
       - sensor_name, unit: meta-info til grafens labels
@@ -107,14 +87,13 @@ class RemoteStartOut(Schema):
       message, channels, voltages, resistances, statuses,
       electrode_count, bus_voltage, current
 
-    OBS: Pi sender impedans (Ohm) i feltet "resistances" (navnet beholdes for kompatibilitet).
     Vi tilføjer også timestamp for den gemte række.
     """
     message = String()
     timestamp = String()
     channels = List(Integer)
     voltages = List(Float)
-    resistances = List(Float)   # Indeholder impedans (Ohm) pr. kanal
+    resistances = List(Float)
     statuses = List(String)
     electrode_count = Integer()
     bus_voltage = Float()
@@ -132,7 +111,7 @@ def index():
 
 
 # --------------------------------------------------
-# API: læs historiske tests fra Electrode_Measurements (til Plotly)
+# API: læs historiske tests fra Electrode_Measurements
 # --------------------------------------------------
 @app.get("/api/sensor-data")
 @app.output(SensorDataOut)
@@ -142,10 +121,10 @@ def get_sensor_data():
 
     Mapping:
       test_timestamp   -> timestamps
-      ch0_resistance   -> ch0  (impedans i Ohm)
-      ch1_resistance   -> ch1  (impedans i Ohm)
-      ch2_resistance   -> ch2  (impedans i Ohm)
-      ch3_resistance   -> ch3  (impedans i Ohm)
+      ch0_resistance   -> ch0
+      ch1_resistance   -> ch1
+      ch2_resistance   -> ch2
+      ch3_resistance   -> ch3
       bus_voltage      -> bus_voltage
       current          -> current
     """
@@ -182,10 +161,10 @@ def get_sensor_data():
 
         for row in rows:
             dt = row[0]   # test_timestamp
-            z0 = row[1]   # ch0_resistance (impedans)
-            z1 = row[2]   # ch1_resistance (impedans)
-            z2 = row[3]   # ch2_resistance (impedans)
-            z3 = row[4]   # ch3_resistance (impedans)
+            r0 = row[1]   # ch0_resistance
+            r1 = row[2]   # ch1_resistance
+            r2 = row[3]   # ch2_resistance
+            r3 = row[4]   # ch3_resistance
             bv = row[5]   # bus_voltage
             cur = row[6]  # current
 
@@ -195,11 +174,11 @@ def get_sensor_data():
             else:
                 timestamps.append(str(dt))
 
-            # Impedans: sørg for, at vi aldrig sender None til Plotly
-            ch0_list.append(float(z0) if z0 is not None else 0.0)
-            ch1_list.append(float(z1) if z1 is not None else 0.0)
-            ch2_list.append(float(z2) if z2 is not None else 0.0)
-            ch3_list.append(float(z3) if z3 is not None else 0.0)
+            # Modstande: sørg for, at vi aldrig sender None til Plotly
+            ch0_list.append(float(r0) if r0 is not None else 0.0)
+            ch1_list.append(float(r1) if r1 is not None else 0.0)
+            ch2_list.append(float(r2) if r2 is not None else 0.0)
+            ch3_list.append(float(r3) if r3 is not None else 0.0)
 
             # Bus voltage + current
             bus_list.append(float(bv) if bv is not None else 0.0)
@@ -262,7 +241,7 @@ def start_remote_test():
     RPC-endpoint:
       - Bliver kaldt fra hjemmesiden (knappen i index.html).
       - Sender POST-kald til Raspberry Pi's /start-test.
-      - Gemmer impedans-målingen i Electrode_Measurements.
+      - Gemmer resultatet i Electrode_Measurements.
       - Returnerer Pi'ens data + timestamp til frontend.
     """
     pi_host = RASPI_CFG.get("host", "127.0.0.1")
@@ -275,17 +254,29 @@ def start_remote_test():
         res.raise_for_status()
         data = res.json()
 
+        # Forventet JSON fra test.py:
+        # {
+        #   "message": "Test completed on Raspberry Pi",
+        #   "channels": [...],         # fx [0,1,2,3]
+        #   "voltages": [...],
+        #   "resistances": [...],      # 4 værdier, én pr. kanal
+        #   "statuses": [...],
+        #   "electrode_count": 4,
+        #   "bus_voltage": ...,
+        #   "current": ...
+        # }
+
         channels = data.get("channels", [])
-        impedances = data.get("resistances", [])  # Pi: impedans (Ohm) ligger her
+        resistances = data.get("resistances", [])
         bus_voltage = data.get("bus_voltage", 0.0)
         current = data.get("current", 0.0)
         electrode_count = data.get("electrode_count", len(channels))
 
         # Sikr at vi har mindst 4 værdier. Hvis ikke, padder vi med 0.
-        z0 = float(impedances[0]) if len(impedances) > 0 else 0.0
-        z1 = float(impedances[1]) if len(impedances) > 1 else 0.0
-        z2 = float(impedances[2]) if len(impedances) > 2 else 0.0
-        z3 = float(impedances[3]) if len(impedances) > 3 else 0.0
+        r0 = float(resistances[0]) if len(resistances) > 0 else 0.0
+        r1 = float(resistances[1]) if len(resistances) > 1 else 0.0
+        r2 = float(resistances[2]) if len(resistances) > 2 else 0.0
+        r3 = float(resistances[3]) if len(resistances) > 3 else 0.0
 
         # Opret timestamp for denne test
         now = datetime.now()
@@ -312,7 +303,7 @@ def start_remote_test():
 
             cursor.execute(
                 insert_query,
-                (now, z0, z1, z2, z3, float(bus_voltage), float(current), electrode_count),
+                (now, r0, r1, r2, r3, float(bus_voltage), float(current), electrode_count),
             )
 
         except (Exception, psycopg.Error) as db_error:
@@ -331,7 +322,7 @@ def start_remote_test():
             "timestamp": now.isoformat(),
             "channels": channels,
             "voltages": data.get("voltages", []),
-            "resistances": impedances,  # beholdt navnet for kompatibilitet
+            "resistances": resistances,
             "statuses": data.get("statuses", []),
             "electrode_count": electrode_count,
             "bus_voltage": float(bus_voltage),
