@@ -1,201 +1,144 @@
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import smbus2
 from gpiozero import OutputDevice
+
 from luma.core.interface.serial import i2c
 from luma.core.render import canvas
 from luma.oled.device import ssd1306
+
 from ina219 import INA219
 from rpi_ws281x import PixelStrip, Color
 
 from apiflask import APIFlask, Schema
 from apiflask.fields import List, Float, Integer, String
 
-# --- Configuration ---
-
-# I2C Configuration
+import Adafruit_ADS1x15
+# --------------------------
+# CONFIG
+# --------------------------
 I2C_PORT = 1
 I2C_ADDR_OLED = 0x3C
-I2C_ADDR_INA219 = 0x40   # Default
-I2C_ADDR_ADS1115 = 0x48  # Default
+I2C_ADDR_INA219 = 0x40
+I2C_ADDR_ADS1115 = 0x48
 
-# MOSFET Configuration
-MOSFET_PIN = 24  # GPIO 24
+MOSFET_PIN = 24
 
-# Resistance Measurement Configuration
-R_REF = 10000.0        # Reference resistor i Ohm (10k)
-V_IN = 3.3             # Input voltage (skal passe til hardware)
-RESISTANCE_THRESHOLD = 5000.0  # 5k Ohm grænse mellem GOOD/BAD
+V_IN_FALLBACK = 3.3
+ADS_GAIN = 1  # +/-4.096V
 
-# Neopixel Configuration
-ENABLE_NEOPIXELS = False      # Sæt True hvis I vil bruge ringen
-NEOPIXEL_PIN = 18             # GPIO 18 (PWM0)
-LED_COUNT = 12                # 12 neopixels på ringen
-LED_BRIGHTNESS = 50           # 0-255
+# Shunt-Modstand pr. kanal (Rs) dummy modstande der skal måles: a0 = 10K a1 = 22K a2 = 4.7K a3 = 27K
+RS_VALUES = [9950.0, 9890.0, 9970.0, 9930.0]
 
-# ------------------------------------------------------------
-# ADS1115 Helper
-# ------------------------------------------------------------
-class ADS1115:
-    def __init__(self, bus, address=0x48):
-        self.bus = bus
-        self.address = address
+# Status ranges (Ohm)
+GOOD_MAX = 5000.0
+OK_MAX = 20000.0
+BAD_MAX = 500000.0
 
-    def read_voltage(self, channel: int) -> float:
-        # Config register: Single-ended, 4.096V range, 128 SPS
-        mux = {0: 0x4, 1: 0x5, 2: 0x6, 3: 0x7}
-        if channel not in mux:
-            return 0.0
+# Failsafe max værdi (JSON-safe)
+OPEN_CIRCUIT_OHMS = 9_999_999.0
 
-        # Byg configord til ADS1115
-        config = 0x8000 | (mux[channel] << 12) | (0x1 << 9) | (0x1 << 15)
-        config_bytes = [(config >> 8) & 0xFF, config & 0xFF]
+# Neopixels
+ENABLE_NEOPIXELS = False
+NEOPIXEL_PIN = 25
+LED_COUNT = 12
+LED_BRIGHTNESS = 50
 
-        try:
-            self.bus.write_i2c_block_data(self.address, 1, config_bytes)
-            time.sleep(0.01)  # Vent på konvertering
+PIXEL_MAP = {0: 3, 1: 6, 2: 8, 3: 11}
 
-            result = self.bus.read_i2c_block_data(self.address, 0, 2)
-            raw = (result[0] << 8) | result[1]
-            if raw > 32767:
-                raw -= 65536
-
-            # 4.096V range / 32768 = 0.125mV per bit
-            return raw * 0.000125
-        except Exception as e:
-            print(f"ADS1115 Read Error: {e}")
-            return 0.0
+# ADS settling (vigtigt ved høj impedans)
+ADS_DUMMY_SLEEP = 0.01    # 10 ms efter dummy read
+ADS_BETWEEN_SLEEP = 0.01  # 10 ms mellem kanaler
+ADS_SAMPLES = 3           # gennemsnit (stabilt)
 
 
-def i2c_scan(bus):
-    print("\nScanning I2C bus...")
-    devices = []
-    for addr in range(0x03, 0x78):
-        try:
-            bus.write_byte(addr, 0)
-            devices.append(addr)
-        except OSError:
-            pass
-
-    if devices:
-        print("I2C devices found:", [hex(device_address) for device_address in devices])
-    else:
-        print("No I2C devices found")
-    return devices
+# --------------------------
+# HELPERS
+# --------------------------
+def adc_counts_to_volts(raw_counts: int) -> float:
+    # Gain=1 => 4.096V fuld skala (32768 counts)
+    return float(raw_counts) * (4.096 / 32768.0)
 
 
-# ------------------------------------------------------------
-# Hardware-initialisering
-# ------------------------------------------------------------
 def initialize_hardware():
-    print("Initializing hardware for API test...")
+    bus = smbus2.SMBus(I2C_PORT)
 
-    # 1. Setup I2C bus
-    bus = None
-    try:
-        bus = smbus2.SMBus(I2C_PORT)
-        print(f"I2C bus {I2C_PORT} initialized.")
-        i2c_scan(bus)
-    except Exception as e:
-        print(f"Error initializing I2C: {e}")
+    serial = i2c(port=I2C_PORT, address=I2C_ADDR_OLED)
+    oled = ssd1306(serial)
+    with canvas(oled) as draw:
+        draw.text((0, 0), "EEG Test Init...", fill="white")
 
-    # 2. OLED
-    oled = None
-    try:
-        serial = i2c(port=I2C_PORT, address=I2C_ADDR_OLED)
-        oled = ssd1306(serial)
-        with canvas(oled) as draw:
-            draw.text((0, 0), "EEG Test Init...", fill="white")
-        print("OLED initialized.")
-    except Exception as e:
-        print(f"Warning: OLED not found or error: {e}")
+    ina = INA219(0.1, busnum=I2C_PORT, address=I2C_ADDR_INA219)
+    ina.configure()
 
-    # 3. INA219 (busspænding + strøm)
-    ina = None
-    try:
-        ina = INA219(0.1, busnum=I2C_PORT, address=I2C_ADDR_INA219)
-        ina.configure()
-        print("INA219 initialized.")
-    except Exception as e:
-        print(f"Warning: INA219 not found or error: {e}")
+    ads = Adafruit_ADS1x15.ADS1115(address=I2C_ADDR_ADS1115, busnum=I2C_PORT)
 
-    # 4. ADS1115
-    ads = None
-    try:
-        if bus:
-            ads = ADS1115(bus, I2C_ADDR_ADS1115)
-            print("ADS1115 initialized.")
-    except Exception as e:
-        print(f"Warning: ADS1115 not found or error: {e}")
+    # OBS: aktiv HIGH/LOW afhænger af jeres MOSFET wiring.
+    mosfet = OutputDevice(MOSFET_PIN, active_high=False, initial_value=False)
 
-    # 5. MOSFET
-    mosfet = None
-    try:
-        mosfet = OutputDevice(MOSFET_PIN, active_high=True, initial_value=False)
-        print(f"MOSFET initialized on GPIO {MOSFET_PIN}.")
-    except Exception as e:
-        print(f"Error initializing MOSFET: {e}")
-
-    # 6. Neopixels
     strip = None
     if ENABLE_NEOPIXELS:
-        try:
-            strip = PixelStrip(
-                LED_COUNT, NEOPIXEL_PIN, 800000, 10, False, LED_BRIGHTNESS, 0
-            )
-            strip.begin()
-            # Sluk alle pixels til start
-            for i in range(strip.numPixels()):
-                strip.setPixelColor(i, Color(0, 0, 0))
-            strip.show()
-            print(f"Neopixels initialized on GPIO {NEOPIXEL_PIN}.")
-        except Exception as e:
-            print(f"Error initializing Neopixels: {e}")
+        strip = PixelStrip(LED_COUNT, NEOPIXEL_PIN, 800000, 10, False, LED_BRIGHTNESS, 0)
+        strip.begin()
+        for i in range(strip.numPixels()):
+            strip.setPixelColor(i, Color(0, 0, 0))
+        strip.show()
+
+    return {"bus": bus, "oled": oled, "ina": ina, "ads": ads, "mosfet": mosfet, "strip": strip}
+
+
+def read_adc_stable(channel: int, ads) -> float:
+    """
+    Stabil læsning:
+      1) dummy read (skifter mux)
+      2) kort sleep så sample/hold kan falde til ro
+      3) flere samples + gennemsnit
+    """
+    _ = ads.read_adc(channel, gain=ADS_GAIN)  # dummy
+    time.sleep(ADS_DUMMY_SLEEP)
+
+    total = 0.0
+    for _ in range(ADS_SAMPLES):
+        total += ads.read_adc(channel, gain=ADS_GAIN)
+        time.sleep(0.002)
+    return total / ADS_SAMPLES
+
+
+def measure_channel(channel: int, ads, v_in: float):
+    raw = read_adc_stable(channel, ads)
+    v_adc = adc_counts_to_volts(int(raw))
+
+    if v_adc <= 0.01 or v_adc >= v_in:
+        r = OPEN_CIRCUIT_OHMS
     else:
-        print("Neopixels DISABLED (set ENABLE_NEOPIXELS=True to enable).")
+        rs = RS_VALUES[channel]
+        r = rs * ((v_in - v_adc) / v_adc)
+        if r < 0:
+            r = OPEN_CIRCUIT_OHMS
 
-    return {
-        "bus": bus,
-        "oled": oled,
-        "ina": ina,
-        "ads": ads,
-        "mosfet": mosfet,
-        "strip": strip,
-    }
-
-
-# ------------------------------------------------------------
-# Måling på én kanal (brugt i concurrency)
-# ------------------------------------------------------------
-def measure_channel(channel, ads):
-    """
-    Måler spænding og beregner modstand på én ADS1115-kanal.
-    Returnerer (channel, voltage, resistance, status, color).
-    """
-    if not ads:
-        return channel, 0.0, 0.0, "NO_ADS", Color(0, 0, 255)
-
-    val = ads.read_voltage(channel)
-
-    # Beregn modstand ud fra spænding
-    r_val = 0.0
-    if 0 < val < V_IN:
-        r_val = R_REF * (val / (V_IN - val))
-
-    status = "BAD"
-    color = Color(255, 0, 0)  # Rød
-    if 0 < r_val < RESISTANCE_THRESHOLD:
+    if r >= OPEN_CIRCUIT_OHMS:
+        status = "FAIL"
+        color = Color(0, 0, 255)
+    elif r <= GOOD_MAX:
         status = "GOOD"
-        color = Color(0, 255, 0)  # Grøn
+        color = Color(0, 255, 0)
+    elif r <= OK_MAX:
+        status = "OK"
+        color = Color(255, 255, 0)
+    elif r <= BAD_MAX:
+        status = "BAD"
+        color = Color(255, 0, 0)
+    else:
+        status = "FAIL"
+        color = Color(0, 0, 255)
 
-    print(f"Ch{channel}: {val:.3f}V | {r_val:.1f} Ohm | {status}")
-    return channel, val, r_val, status, color
+    print(f"Ch{channel}: V={v_adc:.6f}V | R={r:.1f} Ohm | {status}")
+    return channel, float(v_adc), float(r), status, color
 
 
-# ------------------------------------------------------------
-# APIFlask app + schema
-# ------------------------------------------------------------
+# --------------------------
+# API
+# --------------------------
 app = APIFlask(__name__)
 
 
@@ -213,102 +156,48 @@ class StartTestOut(Schema):
 @app.post("/start-test")
 @app.output(StartTestOut)
 def start_test():
-    """
-    Dette endpoint kaldes fra din web-app (RPC).
-    Her laver vi:
-      - hardware-init
-      - tænder MOSFET
-      - læser INA219 (spænding/strøm)
-      - måler 4 ADS-kanaler med concurrency (ThreadPoolExecutor)
-      - opdaterer evt. Neopixels + OLED
-      - returnerer målingerne som JSON, som app.py gemmer i databasen.
-    """
-
     hw = initialize_hardware()
-    bus = hw["bus"]
     oled = hw["oled"]
     ina = hw["ina"]
     ads = hw["ads"]
     mosfet = hw["mosfet"]
     strip = hw["strip"]
 
-    # Tænd MOSFET (så der er strøm til kredsløbet)
-    if mosfet:
-        mosfet.on()
-        print("MOSFET turned ON.")
+    mosfet.on()
+    time.sleep(0.2)
 
-    # Læs spænding/strøm fra INA219
-    bus_voltage = 0.0
-    current = 0.0
-    if ina:
-        try:
-            bus_voltage = ina.voltage()
-            current = ina.current()
-            print(f"INA219: {bus_voltage:.2f}V, {current:.2f}mA")
-        except Exception as e:
-            print(f"INA219 Read Error: {e}")
+    bus_voltage = float(ina.voltage())
+    current = float(ina.current())
 
-    # Kanaler vi vil måle på (4 elektroder pr. test)
+    v_in_used = bus_voltage if bus_voltage > 2.5 else V_IN_FALLBACK
+    print(f"INA219: {bus_voltage:.2f}V, {current:.2f}mA")
+
     channels = [0, 1, 2, 3]
+    voltages = [0.0] * 4
+    resistances = [0.0] * 4
+    statuses = ["N/A"] * 4
+    colors = [Color(0, 0, 0)] * 4
 
-    voltages = [0.0] * len(channels)
-    resistances = [0.0] * len(channels)
-    statuses = ["N/A"] * len(channels)
-    colors = [Color(0, 0, 0)] * len(channels)
+    # ADS1115 læses sekventielt (ikke threadpool)
+    for ch in channels:
+        ch, v, r, st, col = measure_channel(ch, ads, v_in_used)
+        voltages[ch] = v
+        resistances[ch] = r
+        statuses[ch] = st
+        colors[ch] = col
+        time.sleep(ADS_BETWEEN_SLEEP)
 
-    # --- CONCURRENCY: mål alle kanaler parallelt ---
-    with ThreadPoolExecutor(max_workers=len(channels)) as executor:
-        future_map = {
-            executor.submit(measure_channel, ch, ads): ch for ch in channels
-        }
-
-        for future in as_completed(future_map):
-            ch, val, r_val, status, color = future.result()
-            idx = channels.index(ch)
-            voltages[idx] = val
-            resistances[idx] = r_val
-            statuses[idx] = status
-            colors[idx] = color
-
-    # Opdater Neopixels (farve pr. kanal)
     if strip and ENABLE_NEOPIXELS:
-        try:
-            # Her bruger vi bare LED 0–3 til de 4 kanaler.
-            for i, color in enumerate(colors):
-                if i < strip.numPixels():
-                    strip.setPixelColor(i, color)
-            strip.show()
-        except Exception as e:
-            print(f"Neopixel Error: {e}")
+        for ch in channels:
+            pix = PIXEL_MAP[ch]
+            strip.setPixelColor(pix, colors[ch])
+        strip.show()
 
-    # Opdater OLED-display med et kort summary
-    if oled:
-        try:
-            with canvas(oled) as draw:
-                draw.text((0, 0), "MOSFET: ON", fill="white")
-                if len(resistances) >= 4:
-                    draw.text(
-                        (0, 10),
-                        f"R0:{resistances[0]/1000:.1f}k R1:{resistances[1]/1000:.1f}k",
-                        fill="white",
-                    )
-                    draw.text(
-                        (0, 20),
-                        f"R2:{resistances[2]/1000:.1f}k R3:{resistances[3]/1000:.1f}k",
-                        fill="white",
-                    )
-                draw.text(
-                    (0, 35),
-                    f"V:{bus_voltage:.2f}V I:{current:.1f}mA",
-                    fill="white",
-                )
-        except Exception as e:
-            print(f"OLED Update Error: {e}")
-
-    # (Valgfrit) sluk MOSFET igen efter test:
-    # if mosfet:
-    #     mosfet.off()
-    #     print("MOSFET turned OFF.")
+    with canvas(oled) as draw:
+        draw.text((0, 0), "MOSFET: ON", fill="white")
+        draw.text((0, 10), f"R0:{resistances[0]/1000:.1f}k R1:{resistances[1]/1000:.1f}k", fill="white")
+        draw.text((0, 20), f"R2:{resistances[2]/1000:.1f}k R3:{resistances[3]/1000:.1f}k", fill="white")
+        draw.text((0, 35), f"V:{bus_voltage:.2f}V I:{current:.1f}mA", fill="white")
 
     return {
         "message": "Test completed on Raspberry Pi",
@@ -316,13 +205,11 @@ def start_test():
         "voltages": voltages,
         "resistances": resistances,
         "statuses": statuses,
-        "electrode_count": len(channels),
+        "electrode_count": 4,
         "bus_voltage": bus_voltage,
         "current": current,
     }
 
 
 if __name__ == "__main__":
-    # Kør API-serveren på Pi'en
-    # host="0.0.0.0" gør den tilgængelig fra din laptop på samme netværk.
     app.run(host="0.0.0.0", port=5001, debug=True)
