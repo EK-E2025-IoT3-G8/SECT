@@ -2,7 +2,7 @@
 flask:
   SECRET_KEY: "skift_mig_gerne"
   SENSOR_NAME: "EEG Electrode Test"
-  SENSOR_UNIT: "mV"
+  SENSOR_UNIT: "ohm"
 
 database:
   host: "203.0.113.2"
