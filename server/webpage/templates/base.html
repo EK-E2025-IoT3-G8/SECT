@@ -1,65 +1,29 @@
 <!DOCTYPE html> 
-<!-- Fortæller browseren, at dette er et moderne HTML5-dokument -->
-
 <html lang="da">
-<!-- Start på HTML-dokumentet. lang="da" betyder, at sproget er dansk -->
-
 <head>
-    <!-- Head-sektionen indeholder metadata, titel, CSS-links osv. -->
-
     <meta charset="UTF-8" />
-    <!-- Sætter tegnsættet til UTF-8, så æøå osv. virker -->
-
     <title>{% block title %}IoT Sensor Dashboard{% endblock %}</title>
-    <!-- <title> er sidens titel i browser-fanen.
-         Jinja2-blok gør det muligt for child-templates (som index.html)
-         at overskrive titlen. -->
-
-    <!-- Lokal Bootstrap CSS -->
     <link
         href="../static/css/bootstrap.min.css"
         rel="stylesheet"
     >
-    <!-- Loader Bootstrap CSS fra /static/css/bootstrap.min.css.
-         Flask sørger for korrekt URL med url_for. -->
-
-    <!-- Lokal Plotly JS -->
     <script src="../static/js/plotly-latest.min.js"></script>
-    <!-- Loader Plotly JavaScript-biblioteket lokalt.
-         Bruges til at lave grafer i index.html. -->
-
     {% block head_extra %}{% endblock %}
-    <!-- Child-templates kan tilføje ekstra <head>-indhold her. -->
 </head>
 
 <body class="bg-light">
-<!-- Bodyen er alt det, der bliver vist på siden.
-     class="bg-light" giver en lys baggrundsfarve (Bootstrap). -->
-
 <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
-  <!-- Bootstrap-navbar (topmenu) med mørk baggrund og lidt margin i bunden (mb-4). -->
   <div class="container-fluid">
-    <!-- Gør navbaren responsiv og fuld bredde. -->
     <a class="navbar-brand" href="#">IoT Sensor Dashboard</a>
-    <!-- Teksten/logoet i venstre side af navbaren. -->
   </div>
 </nav>
 
 <div class="container mb-5">
-    <!-- Bootstrap container: centrerer indhold og giver horizontal padding.
-         mb-5: margin-bottom for luft under indholdet. -->
     {% block content %}{% endblock %}
-    <!-- Her bliver indholdet fra fx index.html sat ind. -->
 </div>
-
-<!-- Lokal Bootstrap JS bundle -->
 <script
   src="../static/js/bootstrap.min.js">
 </script>
-<!-- Bootstrap JavaScript (bundle inkluderer Popper osv.). -->
-
 {% block scripts %}{% endblock %}
-<!-- Child-templates (index.html) kan tilføje side-specifik JavaScript her. -->
-
 </body>
 </html>
